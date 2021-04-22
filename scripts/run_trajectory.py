@@ -4,15 +4,16 @@ import rospy
 # Brings in the messages used by the fibonacci action, including the
 # goal message and the result message.
 from geometry_msgs.msg import Pose as PoseMsg
+from geometry_msgs.msg import Quaternion, Point
 
-from tf.transformations import euler_from_quaternion
+from tf.transformations import euler_from_quaternion, quaternion_from_euler
 
 import copy
 import sys
 import os
 import numpy as np
 
-#import sorotraj
+import sorotraj
 
 
 class TrajSender:
@@ -24,16 +25,12 @@ class TrajSender:
         self.traj_spec  = {'config':config, 'settings':settings}
 
         self.controller_rate = float(rospy.get_param(rospy.get_name()+"/trajectory_rate",30))
+        self.num_reps = rospy.get_param(rospy.get_name()+"/num_reps",None)
+        self.speed_factor = rospy.get_param(rospy.get_name()+"/speed_factor",None)
 
-        # Connect to the pressure controller command server
-        #self.command_client = actionlib.SimpleActionClient(self.pressure_server_name, CommandAction)
-        #self.command_client.wait_for_server()
-
-        # Connect a callback function to the desired pose topic
+        # Make a publisher to the desired pose topic
         pose_topic = rospy.get_param(rospy.get_name()+"/pose_topic",'/desired_pose')
-        # TODO: Switch to pulisher
-        rospy.Subscriber(pose_topic, PoseMsg, self.set_desired_pose)
-
+        self.pose_publisher = rospy.Publisher(pose_topic, PoseMsg, queue_size=10)
 
         # Set up some parameters
         self.init_pose = None
@@ -44,131 +41,69 @@ class TrajSender:
 
         self.desired_pose = None
 
-
-    def set_desired_pose(self, pose):
-
-        pos_raw = pose.position
-        ori_raw = pose.orientation
-
-        pos = np.array([pos_raw.x, pos_raw.y, pos_raw.z])
-        ori = euler_from_quaternion([ori_raw.x, ori_raw.y, ori_raw.z, ori_raw.w])
-        ori = np.array(ori)
-
-        self.desired_pose = {'position':pos, 'orientation':ori}
+        self.get_trajectory()
 
 
+    def get_trajectory(self):
+        traj = sorotraj.TrajBuilder(graph=False)
 
-    def compute_step(self, curr_time, curr_pose):
+        # Generate the trajectory based on the definition. This will eventually be possible in sorotraj directly
+        traj.definition=self.traj_spec
+        traj.settings = self.traj_spec.get("settings",None)
+        traj.config = self.traj_spec.get("config",None)
+        traj.traj_type = str(traj.settings.get("traj_type"))
+        traj.subsample_num = traj.config.get("subsample_num")
+        traj.go()
+        trajectory = traj.get_trajectory()
+        interp = sorotraj.Interpolator(trajectory)
+        trajectory_fn = interp.get_interp_function(
+                        num_reps = self.num_reps,
+                        speed_factor = self.speed_factor,
+                        invert_direction = False,
+                        as_list = False)
 
-        if self.desired_pose is None:
-            rospy.loginfo("No desired pose detected yet")
-            return
+        self.trajectory_fn = trajectory_fn
+        self.final_time = interp.get_final_time()
 
+
+    def publish_pose(self, pose_in):
+
+        pos = pose_in[0:3]
+        ori = pose_in[3:6]
+
+        ori_quat = quaternion_from_euler(ori[0],ori[1],ori[2])
+        pose_out=PoseMsg(position=Point(x=pos[0],y=pos[1],z=pos[2]),
+                         orientation=Quaternion(x=ori_quat[0], y=ori_quat[1], z=ori_quat[2],w=ori_quat[3]),
+                         )
+
+        self.pose_publisher.publish(pose_out)
+
+
+    def run_trajectory(self):
+        # helper variables
+        r = rospy.Rate(self.controller_rate)
+        success = False
         
-        pos_error = curr_pose['position'] - self.desired_pose['position']
-        ori_error = curr_pose['orientation'] - self.desired_pose['orientation']
+        # Send the pressure trajectory in real time
+        start_time=rospy.Time.now()
+        curr_time = rospy.Duration(0.0)
 
-        print(pos_error)
-        print(ori_error)
+        idx=0
 
-        time_diff = curr_time - self.last_time
+        while curr_time.to_sec() < self.final_time and not rospy.is_shutdown():
+            # Interpolate point to send from the trajectory given
+            curr_time = rospy.Time.now()-start_time
 
-        #pos_diff = curr_pose['position'] - self.last_pose['position']
-        #ori_diff = curr_pose['orientation'] - self.last_pose['orientation']
-
-        print(time_diff)
-
-        # Compute control
-        pressures = [0,0,0,0,0,0,0,0]
-
-        if 'pid' in self.type:
-            p = self.params['p']
-            i = self.params['i']
-            d = self.params['d']
-            # Run 1 step of PID
-
-        maxp = self.params['maxp']
-        minp = self.params['minp']
-
-
-        if 'planar' in self.type:
-            x_trans = self.params['x_trans']
-            y_trans = self.params['y_trans']
-            z_rot   = self.params['z_rot']
-            rest    = self.params['rest']
-
-            xt_comp = pos_error[0]*p[0]*(x_trans-rest)
-            yt_comp = pos_error[1]*p[1]*(y_trans-rest)
-
-            zr_comp = ori_error[2]*p[5]*(z_rot-rest)
-
-            all_press=np.array([xt_comp, yt_comp, zr_comp])
-            pressures_raw = np.mean(all_press,axis=0)+rest
-
-            # Clip pressures to thier min and max values
-            pressures = np.min([pressures_raw,maxp], axis=0)
-            pressures = np.max([pressures,minp], axis=0)
-
-
-        self.last_time = curr_time
-        return pressures
-
+            if curr_time.to_sec() >= self.final_time: 
+                break
             
+            new_pose = self.trajectory_fn(curr_time.to_sec()).tolist()
 
-    def send_setpoint(self, pressures, transition_time=None):
+            # Send pressure setpoint to the controller
+            self.publish_pose(new_pose)
 
-        if transition_time is None:
-            transition_time = 1/self.controller_rate
-        
-        goal = CommandGoal(command='set', args=[transition_time]+pressures, wait_for_ack = False)
-        self.command_client.send_goal(goal)
-        self.command_client.wait_for_result()
-
-
-    def tag_callback(self, msg):
-        detections = msg.detections
-
-        # If no detection, do nothing
-        if len(detections)==0:
-            return
-
-        # If there's a detection, get the data
-
-        time = msg.header.stamp.to_sec()
-        detection = detections[0]
-
-        pose = detection.pose.pose.pose
-
-        pos_raw = pose.position
-        ori_raw = pose.orientation
-
-        pos = np.array([pos_raw.x, pos_raw.y, pos_raw.z])
-        ori = euler_from_quaternion([ori_raw.x, ori_raw.y, ori_raw.z, ori_raw.w])
-        ori = np.array(ori)
-
-        pose={'position':pos, 'orientation':ori}
-
-        # Store the initial pose on the first detection event
-        if self.init_pose is None:
-            self.init_pose = copy.deepcopy(pose)
-            self.init_time = copy.deepcopy(time)
-
-            self.last_pose = copy.deepcopy(pose)
-            self.last_time = copy.deepcopy(time)
-            return
-
-        # Calculate relative time and pose
-        time_rel = time - self.init_time
-
-        pose_rel = {}
-        for key in pose:
-            pose_rel[key] = pose[key] - self.init_pose[key]
-
-
-        # Calculate Control
-        pressures = self.compute_step(time_rel, pose_rel)
-        print(pressures)
-        #self.send_setpoint(pressures)
+            r.sleep()
+            idx += 1
 
 
     def shutdown(self):
@@ -180,7 +115,7 @@ if __name__ == '__main__':
     try:
         rospy.init_node('controller_node', disable_signals=True)
         node = TrajSender()
-        rospy.spin()
+        node.run_trajectory()
 
     except rospy.ROSInterruptException:
         node.shutdown()

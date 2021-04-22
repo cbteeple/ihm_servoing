@@ -182,6 +182,7 @@ class Controller:
 
 
     def shutdown(self):
+        #self.command_client.cancel_all_goals()
         pass
 
 

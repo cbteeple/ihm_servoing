@@ -2,7 +2,7 @@
 <launch>
 
     <!-- get the arguments from  -->
-    <arg name="config" default="default.yaml" doc="Configuration profile to use" />
+    <arg name="controller" default="default.yaml" doc="Controller configuration profile to use" />
     <arg name="debug" default="False" doc="Whether debug is on" />
     <arg name="suffix" default="0" doc="Suffix to add to nodes" />
     <arg name="tag_topic" default="/tag_detections" doc="April tag topic" />
@@ -17,7 +17,7 @@
     <!-- Start the main serial sender -->
     <node name="ihm_servo_node$(arg _suffix_helper)" pkg="ihm_servoing" type="controller_node.py" respawn="false"
         output="screen">
-        <rosparam file="$(find ihm_servoing)/config/controllers/$(arg config)" command="load"/>
+        <rosparam file="$(find ihm_servoing)/config/controllers/$(arg controller)" command="load"/>
         <param name="DEBUG" type="bool" value="$(arg debug)"/>
         <param name="tag_topic" type="str" value="$(arg tag_topic)"/>
         <param name="pose_topic" type="str" value="$(arg pose_topic)"/>
