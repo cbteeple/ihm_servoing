@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<launch>
+
+    <!-- get the arguments from  -->
+    <arg name="config" default="square.yaml" doc="Configuration profile to use" />
+    <arg name="debug" default="False" doc="Whether debug is on" />
+    <arg name="suffix" default="0" doc="Suffix to add to nodes" />
+    <arg name="pose_topic" default="/desired_pose" doc="Pose setpoint topic" />
+    <arg name="rate" default="30" doc="Rate (in Hz) to run the controller (this should roughly match your camera's framerate)" />
+
+
+    <!-- Generate helper arguments -->
+    <arg name="_suffix_helper"     if="$(arg suffix)" value="_$(arg suffix)"  />
+    <arg name="_suffix_helper" unless="$(arg suffix)" value=""  />
+
+    <!-- Start the main serial sender -->
+    <node name="ihm_servo_trajectory_node$(arg _suffix_helper)" pkg="ihm_servoing" type="run_trajectory.py" respawn="false"
+        output="screen">
+        <rosparam file="$(find ihm_servoing)/config/trajectories/$(arg config)" command="load"/>
+        <param name="DEBUG" type="bool" value="$(arg debug)"/>
+        <param name="pose_topic" type="str" value="$(arg pose_topic)"/>
+        <param name="trajectory_rate" type="double" value="$(arg rate)"/>
+    </node>
+
+</launch>
