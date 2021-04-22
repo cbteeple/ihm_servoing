@@ -13,7 +13,9 @@ Visual servoing for a soft hand.
     1. Make another new catkin workspace
     2. Set up my [pressure controller package](https://ctrl-p.cbteeple.com/latest/ros-driver)
     3. Clone this package into the src folder
-    4. Run `catkin_make`
+    4. Clone my [video_recorder](https://github.com/cbteeple/ros_video_recorder) package into the src folder (_optional_)
+    5. Clone my [rosbag_recorder](https://github.com/cbteeple/rosbag-recorder) package into the src folder (_optional_)
+    6. Run `catkin_make`
 4. [Set up your `~/.bashrc` file](https://docs.cbteeple.com/robot/ros#setting-up-ros-on-linux) to source both workspaces
 
 ## Setup
@@ -40,4 +42,4 @@ Visual servoing for a soft hand.
 6. Send single desired poses
     - `rostopic pub desired_pose geometry_msgs/Pose "{'position': [0.0, 0.0, 0.0], 'orientation': [0.0, 0.0, 0.0, 0.0]}"`
 7. Send an desired pose trajectory
-    - `roslaunch ihm_servoing run_trajectory.launch traj:=square.yaml reps:=2 speed:=1.0`
+    - `roslaunch ihm_servoing run_trajectory.launch traj:=square.yaml reps:=2 speed:=1.0 save:=true`

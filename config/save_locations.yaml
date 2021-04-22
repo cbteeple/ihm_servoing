@@ -1,0 +1,5 @@
+#save_folder: '/home/armando/Documents/data'
+save_folder: '/media/armando/LaCie/robot_data/visual_servoing'
+#save_folder: '/media/armando/teepdrive/robot_data'
+#save_folder: '/media/armando/DATA/robot_data'
+save_folder_default: '/media/armando/DATA/robot_data/visual_servoing'

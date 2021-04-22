@@ -9,6 +9,7 @@
     <arg name="rate" default="30" doc="Rate (in Hz) to run the controller (this should roughly match your camera's framerate)" />
     <arg name="reps" default="1" doc="Number of reps" />
     <arg name="speed" default="1" doc="Number of reps" />
+    <arg name="save" default="false" doc="save data" />
 
 
     <!-- Generate helper arguments -->
@@ -24,6 +25,8 @@
         <param name="trajectory_rate" type="double" value="$(arg rate)"/>
         <param name="num_reps" type="int" value="$(arg reps)"/>
         <param name="speed_factor" type="double" value="$(arg speed)"/>
+        <param name="traj_name" type="str" value="$(arg traj)"/>
+        <param name="save_data" type="bool" value="$(arg save)"/>
     </node>
 
 </launch>
