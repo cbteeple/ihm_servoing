@@ -133,7 +133,7 @@ class TrajSender:
 
     def shutdown(self):
         if self.sh.saving_now:
-            self.sh.start_saving()
+            self.sh.stop_saving()
 
 
 class SaveHandler:
@@ -269,10 +269,13 @@ class SaveHandler:
 
 if __name__ == '__main__':
     try:
-        rospy.init_node('controller_node', disable_signals=True)
+        rospy.init_node('controller_node', disable_signals=False)
         node = TrajSender()
+        rospy.on_shutdown(node.shutdown)
         node.run_trajectory()
+    except:
+        raise
 
-    except rospy.ROSInterruptException:
-        node.shutdown()
-        print("program interrupted before completion")
+    # except rospy.ROSInterruptException:
+    #     node.shutdown()
+    #     print("program interrupted before completion")

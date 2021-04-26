@@ -31,12 +31,16 @@ class Controller:
         self.params = self.config.get('parameters',None)
         self.controller_rate = float(rospy.get_param(rospy.get_name()+"/controller_rate",30))
 
+        self.num_channels = rospy.get_param('/pressure_control/num_channels',[])
+        self.num_channels_total = sum(self.num_channels)
+
         for key in self.params:
             self.params[key] = np.array(self.params[key])
 
         # Connect to the pressure controller command server
         self.command_client = actionlib.SimpleActionClient(self.pressure_server_name, CommandAction)
         self.command_client.wait_for_server()
+        self.set_data_stream(True)
 
         # Connect a callback function to the desired pose topic
         pose_topic = rospy.get_param(rospy.get_name()+"/pose_topic",'/desired_pose')
@@ -57,8 +61,12 @@ class Controller:
         self.last_time = None
 
         self.desired_pose = None
+        self.is_shutdown=False
+        self.is_init = False
 
     def set_desired_pose(self, pose):
+        if self.is_shutdown:
+            return
 
         pos_raw = pose.position
         ori_raw = pose.orientation
@@ -92,7 +100,7 @@ class Controller:
         print(time_diff)
 
         # Compute control
-        pressures = [0,0,0,0,0,0,0,0]
+        pressures = [0]*self.num_channels_total
 
         if 'pid' in self.type:
             p = self.params['p']
@@ -133,16 +141,29 @@ class Controller:
         if transition_time is None:
             transition_time = 1/self.controller_rate
 
-        psend=[transition_time]+pressures.tolist()
-        print(psend)
+        if isinstance(pressures, np.ndarray):
+            pressures = pressures.tolist()
+
+        psend=[transition_time]+pressures
         
-        goal = CommandGoal(command='set', args=psend, wait_for_ack = False)
+        self.send_command('set', psend)
+
+
+    def set_data_stream(self, value):
+        if value:
+            self.send_command('on', [])
+        else:
+            self.send_command('off', [])
+
+
+
+    def send_command(self,cmd, args, wait_for_ack=False):
+        goal = CommandGoal(command=cmd, args=args, wait_for_ack = wait_for_ack)
         self.command_client.send_goal(goal)
         self.command_client.wait_for_result()
 
 
     def publish_pose(self, pose_in):
-
         pos = pose_in['position'].tolist()
         ori = pose_in['orientation'].tolist()
 
@@ -154,6 +175,9 @@ class Controller:
         self.pose_publisher.publish(pose_out)
 
     def tag_callback(self, msg):
+        if self.is_shutdown:
+            return
+
         detections = msg.detections
 
         # If no detection, do nothing
@@ -200,21 +224,40 @@ class Controller:
         if pressures is not None:
             #print(pressures)
             self.send_setpoint(pressures)
+        elif not self.is_init:
+            rest=self.params.get('rest',None)
+            if rest is not None:
+                self.send_setpoint(rest,1.0)
+            self.is_init=True
 
 
     def shutdown(self):
-        self.send_setpoint([0,0,0,0,0,0,0,0])
+        self.is_shutdown=True
+        print('Setting all pressures to zero')
+        self.send_setpoint([0]*self.num_channels_total, 2)
+        time.sleep(2.2)
+        print('Turning off data stream')
+        self.set_data_stream(False)
+        time.sleep(0.5)
+        
         #self.command_client.cancel_all_goals()
-        pass
 
 
 
 if __name__ == '__main__':
     try:
-        rospy.init_node('controller_node', disable_signals=True)
+        rospy.init_node('controller_node', disable_signals=False)
         node = Controller()
+        rospy.on_shutdown(node.shutdown)
         rospy.spin()
+    except:
+        raise
 
-    except rospy.ROSInterruptException:
-        node.shutdown()
-        print("program interrupted before completion")
+    # except KeyboardInterrupt:
+    #     print("Keyboard Interrup Triggered")
+    #     node.shutdown()
+
+    # except rospy.ROSInterruptException:
+    #     print("ROS is shutting down")
+    #     node.shutdown()
+        
