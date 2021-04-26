@@ -85,7 +85,8 @@ class Controller:
             rospy.loginfo("No desired pose detected yet")
             return None
 
-        
+        des_pos = self.desired_pose['position']
+        des_ori = self.desired_pose['orientation']
         pos_error = curr_pose['position'] - self.desired_pose['position']
         ori_error = curr_pose['orientation'] - self.desired_pose['orientation']
 
@@ -111,6 +112,10 @@ class Controller:
         maxp = self.params['maxp']
         minp = self.params['minp']
 
+        if 'ff' in self.type:
+            ff_gain = self.params['ff']
+            ff_gain
+
 
         if 'planar' in self.type:
             x_trans = self.params['x_trans']
@@ -120,11 +125,17 @@ class Controller:
 
             xt_comp = pos_error[0]*p[0]*(x_trans-rest)
             yt_comp = pos_error[1]*p[1]*(y_trans-rest)
-
             zr_comp = ori_error[2]*p[5]*(z_rot-rest)
+            all_press=np.mean(np.array([xt_comp, yt_comp, zr_comp]),axis=0)
 
-            all_press=np.array([xt_comp, yt_comp, zr_comp])
-            pressures_raw = np.mean(all_press,axis=0)+rest
+            all_ff = [0]*self.num_channels_total
+            if 'ff' in self.type:
+                xt_ff = des_pos[0]*ff_gain[0]*(x_trans-rest)
+                yt_ff = des_pos[1]*ff_gain[1]*(y_trans-rest)
+                zr_ff = des_ori[2]*ff_gain[5]*(z_rot-rest)
+                all_ff = np.mean(np.array([xt_ff, yt_ff, zr_ff]), axis=0)
+
+            pressures_raw = all_press + all_ff + rest
 
             # Clip pressures to thier min and max values
             pressures = np.min([pressures_raw,maxp], axis=0)
